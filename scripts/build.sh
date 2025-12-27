@@ -26,7 +26,7 @@ rm -rf .next
 
 # Run the build
 echo "🏗️  Building static site..."
-npm run build
+npm run build:raw
 BUILD_STATUS=$?
 
 # Restore admin directories
