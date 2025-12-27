@@ -1,0 +1,73 @@
+---
+title: "The Floating Point Bug That Taught Me Numerical Stability"
+date: "2024-11-15"
+summary: "How a naive implementation of a physics simulation gave nonsensical results, and what I learned about numerical methods."
+---
+
+I was implementing a molecular dynamics simulation for a computational physics assignment. The task seemed straightforward: simulate particles interacting via the Lennard-Jones potential and measure the diffusion coefficient.
+
+## The Problem
+
+After implementing the basic algorithm, my simulation produced garbage. The total energy was not conserved—it would explode after a few hundred time steps. Particles would fly off to infinity or collapse into singularities.
+
+Here's the force calculation I started with:
+
+```python
+def compute_forces(positions):
+    forces = np.zeros_like(positions)
+    for i, p1 in enumerate(positions):
+        for j, p2 in enumerate(positions):
+            if i == j:
+                continue
+            r = np.linalg.norm(p1 - p2)
+            f = 48 * (r**-13 - 0.5 * r**-7)  # Lennard-Jones force
+            forces[i] += f * (p2 - p1) / r
+    return forces
+```
+
+## Investigation Timeline
+
+### Day 1: Verify the physics
+I re-deried the Lennard-Jones force formula from the potential. It was correct.
+
+### Day 2: Check the implementation
+I added unit tests for the force calculation against known values. Passed.
+
+### Day 3: Add logging
+I logged positions and forces at each step. The forces became enormous when particles got very close.
+
+### Day 4: The realization
+When particles approach each other, r → 0, and the r⁻¹³ term blows up. In discrete time steps, particles can get arbitrarily close, causing numerical explosion.
+
+## The Fix
+
+I added a softening parameter and a maximum force cutoff:
+
+```python
+def compute_forces(positions, epsilon=1e-6, f_max=1000):
+    forces = np.zeros_like(positions)
+    for i, p1 in enumerate(positions):
+        for j, p2 in enumerate(positions):
+            if i == j:
+                continue
+            r = np.linalg.norm(p1 - p2)
+            r_eff = np.sqrt(r**2 + epsilon**2)  # Softening
+            f = 48 * (r_eff**-13 - 0.5 * r_eff**-7)
+            f = np.clip(f, -f_max, f_max)  # Cutoff
+            forces[i] += f * (p2 - p1) / r_eff
+    return forces
+```
+
+But this changed the physics. A better approach was to use adaptive time stepping: when forces are large, use smaller dt.
+
+## What I Learned
+
+1. **Continuous problems don't map trivially to discrete time.** The equations of motion assume continuous time, but simulations take discrete steps.
+
+2. **Test edge cases, not just typical inputs.** My unit tests used reasonable separations. I should have tested what happens at r → 0.
+
+3. **Read the literature.** After fixing it, I found this is a well-known issue in MD simulations. The standard solutions (Verlet integration, thermostat, cutoffs) exist for good reason.
+
+4. **Energy conservation is a good diagnostic.** When working with physical simulations, monitoring conserved quantities is a fast way to catch bugs.
+
+The simulation now runs stably for millions of steps, and the measured diffusion coefficient matches theoretical predictions within error bars.

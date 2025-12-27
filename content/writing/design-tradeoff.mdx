@@ -1,0 +1,77 @@
+---
+title: "Why I Chose SQLite Over PostgreSQL for a Small Project"
+date: "2024-10-22"
+summary: "Sometimes the boring technology choice is the right one. Here's how I decided on a database for a side project."
+---
+
+I was building a small web application to track my study habits. It needed to store: users, study sessions, and some basic analytics. The database choice seemed straightforward until I actually thought about it.
+
+## The Options
+
+I considered three options:
+
+1. **PostgreSQL**: Battle-tested, feature-rich, the default choice for serious applications.
+2. **SQLite**: Embedded, zero-config, great for small datasets.
+3. **JSON files**: No dependencies, but no querying capabilities.
+
+## The Constraints
+
+I listed my actual constraints:
+
+- **Users**: Just me, maybe a few friends if I shared it.
+- **Data**: Maybe 10,000 sessions per year per user.
+- **Deployment**: I wanted cheap or free hosting.
+- **Complexity**: This is a side project. I didn't want to spend time on DevOps.
+
+## The Tradeoffs
+
+### PostgreSQL
+
+Pros:
+- I'd learn skills transferable to work
+- Could handle any future growth
+- ACID guarantees, concurrent writes
+
+Cons:
+- Required a separate database service (Render, Supabase, etc.)
+- Connection pooling complexity
+- Migration management needed
+- Free tiers have limits or sleep issues
+
+### SQLite
+
+Pros:
+- Zero configuration
+- Single file, easy to backup
+- Surprisingly performant for read-heavy workloads
+- No network latency
+- Free at any scale I'd reach
+
+Cons:
+- Doesn't handle concurrent writes well
+- No built-in replication
+- Not "resume-friendly" technology (some might see it as toy)
+
+## The Decision
+
+I chose SQLite. Here's why:
+
+1. **My workload is essentially single-user.** Even with a few users, the write concurrency would be minimal.
+
+2. **Deployment simplicity.** The database is just a file. I can deploy to Vercel, Netlify, or any static host with serverless functions. No separate database service to manage.
+
+3. **Backup is trivial.** Copy the file. That's it.
+
+4. **It's plenty fast.** For my expected dataset size (~100k rows), queries return in milliseconds.
+
+## The Reality Check
+
+I've been running this for 6 months. The SQLite database file is 2MB. I've never hit a concurrency issue. Deployment takes about 30 seconds.
+
+If this became a real product with thousands of users, I'd migrate to PostgreSQL. But by that point, I'd have product-market fit and could justify the complexity.
+
+## The Meta-Lesson
+
+Framework choices should follow from constraints, not hype. SQLite felt like "not a real database," but for my actual constraints, it was the best choice.
+
+Don't build complexity you might need someday. Build what you need today, and make it easy to change later.

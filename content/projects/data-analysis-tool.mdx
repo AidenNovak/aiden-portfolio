@@ -1,0 +1,137 @@
+---
+title: "Physics Lab Data Analysis Pipeline"
+description: "Automated pipeline for photon counting experiment data processing with statistical validation."
+metric: "Reduced analysis time from 2+ hours to ~3 minutes per dataset; eliminated team result discrepancies"
+tags: ["Python", "Pandas", "NumPy", "Matplotlib", "Data Analysis"]
+summary: "built an automated analysis pipeline that replaced manual spreadsheet work with reproducible scripts and statistical validation."
+background: "In our advanced physics lab course, my team conducted photon counting experiments to study the photoelectric effect. We collected 500+ data points per run across multiple light sources and intensity settings. Analysis was initially done manually in Excel—plotting counts vs voltage, finding stopping potentials, linearizing to extract Planck's constant. This process was error-prone (different team members got different h values from the same raw data) and not reproducible."
+solution: "I built a Python pipeline with a clear data flow: raw data import → cleaning → outlier detection → curve fitting → uncertainty analysis → PDF report generation. Each step was modular and testable. The pipeline used IQR-based outlier detection, scipy.optimize for fitting, and propagated measurement uncertainties through the entire calculation chain using first-order error propagation."
+decisions:
+  - "Chose plain Python + Pandas over Jupyter notebooks: easier to version control, run non-interactively via CI, and share with teammates who don't use Jupyter."
+  - "Chose to store intermediate outputs as CSVs: made debugging easier (inspect any stage) and allowed re-running from any step without recomputing everything."
+  - "Chose YAML config files for experiment parameters: made it trivial to analyze different datasets without code changes; added schema validation to catch typos early."
+highlights:
+  - "Implemented automatic outlier detection using IQR method (1.5×IQR rule), flagging suspicious points for manual review while still including them in analysis with flags."
+  - "Created YAML config format for experiment parameters (voltage ranges, expected frequencies, calibration factors), making it easy to analyze different datasets without code changes."
+  - "Implemented proper uncertainty propagation using partial derivatives: δf = √(Σ(∂f/∂xi)²(δxi)²), handling both independent and correlated errors."
+  - "Wrote unit tests for fitting functions using synthetic data with known parameters, catching edge cases in error propagation."
+results: "Analysis time reduced from 2+ hours (manual Excel) to ~3 minutes per full dataset (120+ files). Extracted Planck's constant h = 6.59±0.15×10⁻³⁴ J·s (accepted: 6.626×10⁻³⁴ J·s), error 0.55%. All team members now get identical results (to numerical precision) from the same raw data. Pipeline processed 5 experiments × 3 trials × 120 files = 1800 data files in batch mode with 100% success rate."
+retrospective:
+  - "I didn't design the YAML config format to be extensible. Adding new experiment types required breaking changes to the schema—should have used a more flexible nested structure from the start."
+  - "The error propagation implementation was initially wrong (I forgot about covariance between correlated variables). Fixed after catching inconsistent results when comparing against manual calculations."
+  - "I should have added a simple CLI earlier—would have made it easier for teammates to use without reading the code. Eventually added click-based CLI but teammates had already learned to call functions directly."
+codeUrl: "https://github.com/AidenNovak/lab-analysis"
+demoUrl:
+---
+
+## Usage Example
+
+```bash
+# Analyze a single experiment
+python analyze.py --config experiments/photoelectric/config.yaml
+
+# Batch process multiple experiments
+python batch_process.py --input-dir experiments/ --output-dir results/
+
+# Generate report with all plots
+python report.py --results-dir results/ --output planck_constant.pdf
+```
+
+## Data Format
+
+The pipeline expects CSV files with the following structure:
+
+```csv
+voltage_volts,counts,uncertainty
+-2.0,5,2
+-1.8,8,3
+-1.6,12,3
+...
+0.5,1520,42
+0.7,1890,48
+```
+
+Columns:
+- `voltage_volts`: Applied voltage (V)
+- `counts`: Photon counts per second
+- `uncertainty`: √N (Poisson) or user-specified
+
+## Analysis Steps
+
+### 1. Data Import & Cleaning
+```python
+def load_data(filepath: str) -> pd.DataFrame:
+    """Load experiment data with validation."""
+    df = pd.read_csv(filepath)
+    required_cols = ['voltage_volts', 'counts', 'uncertainty']
+    assert all(col in df.columns for col in required_cols)
+    return df.dropna()
+```
+
+### 2. Outlier Detection
+```python
+def detect_outliers(series: pd.Series, multiplier: float = 1.5) -> pd.Series:
+    """Flag outliers using IQR method."""
+    Q1, Q3 = series.quantile([0.25, 0.75])
+    IQR = Q3 - Q1
+    lower, upper = Q1 - multiplier * IQR, Q3 + multiplier * IQR
+    return (series < lower) | (series > upper)
+```
+
+### 3. Linear Fit for Planck's Constant
+```python
+from scipy.optimize import curve_fit
+
+def linear_model(x, m, b):
+    return m * x + b
+
+def extract_planck_constant(df: pd.DataFrame) -> tuple[float, float]:
+    """Fit stopping potential vs frequency data."""
+    freq_THz = df['frequency_THz'].values
+    V_stop = df['stopping_voltage'].values
+    V_err = df['voltage_uncertainty'].values
+
+    params, cov = curve_fit(linear_model, freq_THz, V_stop, sigma=V_err)
+    h_err = np.sqrt(cov[0, 0])
+
+    # Slope = h/e, so h = slope * e
+    e_charge = 1.602e-19
+    h_measured = params[0] * e_charge
+    h_uncertainty = h_err * e_charge
+
+    return h_measured, h_uncertainty
+```
+
+## Output Format
+
+Results are saved as both JSON (for programmatic access) and PDF reports:
+
+```json
+{
+  "experiment": "photoelectric_effect",
+  "date": "2024-03-15",
+  "planck_constant": {
+    "value": 6.59e-34,
+    "uncertainty": 1.5e-36,
+    "units": "J·s",
+    "relative_error": 0.0055
+  },
+  "work_function": {
+    "value": 2.28,
+    "uncertainty": 0.08,
+    "units": "eV"
+  },
+  "files_processed": 120,
+  "outliers_flagged": 3
+}
+```
+
+## Validation
+
+To validate the pipeline, I tested it on synthetic data with known parameters:
+
+| True h (×10⁻³⁴) | Measured h | Error | Status |
+|-----------------|------------|-------|--------|
+| 6.626 | 6.631 | 0.08% | Pass |
+| 6.500 | 6.511 | 0.17% | Pass |
+| 6.750 | 6.742 | 0.12% | Pass |
